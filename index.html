@@ -7,17 +7,13 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  background: #0d0d0d;
-  color: #fff;
+  background: #0d0d0d; color: #fff;
   font-family: 'Courier New', monospace;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  min-height: 100vh; display: flex;
+  flex-direction: column; align-items: center;
+  justify-content: center; padding: 24px;
 }
-h1 { font-size: 13px; letter-spacing: 5px; text-transform: uppercase; color: #444; margin-bottom: 50px; }
+h1 { font-size: 13px; letter-spacing: 5px; text-transform: uppercase; color: #444; margin-bottom: 30px; }
 .btn {
   width: 110px; height: 110px; border-radius: 50%;
   border: 2px solid #333; background: #111;
@@ -31,32 +27,56 @@ h1 { font-size: 13px; letter-spacing: 5px; text-transform: uppercase; color: #44
   border: 1px solid #7c3aed66; animation: ripple 1.4s ease-out infinite;
 }
 @keyframes ripple { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }
-#status { margin-top: 36px; font-size: 12px; letter-spacing: 3px; color: #444; text-transform: uppercase; min-height: 18px; transition: color 0.3s; }
-#status.on { color: #a78bfa; } #status.say { color: #34d399; } #status.err { color: #f87171; }
-#word-display { margin-top: 48px; font-size: 32px; letter-spacing: 8px; color: #fff; min-height: 44px; text-transform: uppercase; }
+#status { margin-top: 28px; font-size: 12px; letter-spacing: 3px; color: #444; text-transform: uppercase; min-height: 18px; }
+#status.on { color: #a78bfa; } #status.say { color: #34d399; } #status.err { color: #f87171; } #status.ok { color: #facc15; }
+#word-display { margin-top: 36px; font-size: 32px; letter-spacing: 8px; color: #fff; min-height: 44px; text-transform: uppercase; }
 #letters-display { margin-top: 14px; font-size: 13px; letter-spacing: 5px; color: #555; min-height: 20px; }
-.hint { position: fixed; bottom: 24px; font-size: 11px; color: #2a2a2a; letter-spacing: 1px; text-align: center; padding: 0 20px; }
+#testBtn {
+  margin-top: 30px; padding: 12px 28px; border-radius: 30px;
+  border: 1px solid #333; background: #1a1a1a; color: #888;
+  font-size: 12px; letter-spacing: 2px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#testBtn.unlocked { border-color: #34d399; color: #34d399; }
 </style>
 </head>
 <body>
 <h1>Диктант</h1>
 <div class="btn" id="micBtn" onclick="toggle()">🎙️</div>
-<div id="status">нажми чтобы начать</div>
+<div id="status">сначала нажми тест звука</div>
 <div id="word-display"></div>
 <div id="letters-display"></div>
-<div class="hint">слышит учителя → говорит тебе по буквам в наушник</div>
+<button id="testBtn" onclick="testSound()">🔊 тест звука</button>
+
 <script>
-let recognition=null,running=false,speaking=false,queue=[];
+let recognition=null, running=false, speaking=false, queue=[], unlocked=false;
 const btn=document.getElementById('micBtn');
 const status=document.getElementById('status');
 const wordDisplay=document.getElementById('word-display');
 const lettersDisplay=document.getElementById('letters-display');
+const testBtn=document.getElementById('testBtn');
 const synth=window.speechSynthesis;
+
 function setStatus(t,c){status.textContent=t;status.className=c||'';}
-function toggle(){if(!running)start();else stop();}
+
+function testSound(){
+  // Разблокировка аудио на iOS через живое нажатие
+  synth.cancel();
+  const u=new SpeechSynthesisUtterance('а б в г д');
+  u.lang='ru-RU'; u.rate=0.8; u.volume=1.0;
+  u.onstart=()=>{ unlocked=true; testBtn.classList.add('unlocked'); testBtn.textContent='✅ звук работает'; setStatus('теперь нажми микрофон','ok'); };
+  u.onerror=()=>{ setStatus('ошибка звука — проверь наушники','err'); };
+  synth.speak(u);
+}
+
+function toggle(){
+  if(!unlocked){ setStatus('сначала нажми тест звука','err'); return; }
+  if(!running) start(); else stop();
+}
+
 function start(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setStatus('не поддерживается','err');return;}
+  if(!SR){setStatus('микрофон не поддерживается','err');return;}
   recognition=new SR();
   recognition.lang='ru-RU';
   recognition.continuous=true;
@@ -66,8 +86,10 @@ function start(){
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal){
         const text=e.results[i][0].transcript.trim().toLowerCase();
-        const words=text.split(/\s+/).filter(w=>w.length>0);
-        words.forEach(w=>{const clean=w.replace(/[^а-яёa-z]/gi,'');if(clean.length>0)queue.push(clean);});
+        text.split(/\s+/).filter(w=>w.length>0).forEach(w=>{
+          const clean=w.replace(/[^а-яёa-z]/gi,'');
+          if(clean.length>0) queue.push(clean);
+        });
         processQueue();
       }
     }
@@ -76,25 +98,32 @@ function start(){
   recognition.onend=()=>{if(running)recognition.start();};
   recognition.start();
 }
-function stop(){running=false;if(recognition)recognition.stop();btn.classList.remove('active');setStatus('остановлено');synth.cancel();queue=[];speaking=false;}
-function processQueue(){if(speaking||queue.length===0)return;const word=queue.shift();speakWord(word);}
+
+function stop(){
+  running=false; if(recognition)recognition.stop();
+  btn.classList.remove('active'); setStatus('остановлено');
+  synth.cancel(); queue=[]; speaking=false;
+}
+
+function processQueue(){if(speaking||queue.length===0)return;speakWord(queue.shift());}
+
 function speakWord(word){
   speaking=true;
   const letters=word.split('');
   wordDisplay.textContent=word.toUpperCase();
   lettersDisplay.textContent=letters.join(' · ');
-  setStatus('диктую по буквам...','say');
+  setStatus('диктую...','say');
   speakLetters(letters,0,()=>{speaking=false;setStatus('слушаю...','on');setTimeout(processQueue,500);});
 }
+
 function speakLetters(letters,i,done){
   if(i>=letters.length){done();return;}
   const u=new SpeechSynthesisUtterance(letters[i]);
-  u.lang='ru-RU';u.rate=0.8;u.pitch=1.0;u.volume=1.0;
-  u.onend=()=>setTimeout(()=>speakLetters(letters,i+1,done),200);
+  u.lang='ru-RU'; u.rate=0.75; u.pitch=1.0; u.volume=1.0;
+  u.onend=()=>setTimeout(()=>speakLetters(letters,i+1,done),220);
   u.onerror=()=>speakLetters(letters,i+1,done);
   synth.speak(u);
 }
-document.addEventListener('touchstart',()=>{const u=new SpeechSynthesisUtterance('');synth.speak(u);},{once:true});
 </script>
 </body>
 </html>
